@@ -59,16 +59,24 @@ def _request_json():
 
 
 def _auth_user():
-    """Verify the x-auth-user / x-auth-key headers against the Calibre-Web
-    username and the user's personal KOSync key. Returns the User or None."""
-    username = request.headers.get('x-auth-user', '')
-    key = request.headers.get('x-auth-key', '')
+    """Verify the request against a Calibre-Web username and the user's personal
+    KOSync key. KOReader authenticates via the x-auth-user / x-auth-key headers
+    (the key being md5(key)); body/query fields are accepted as a fallback.
+    Returns the User or None."""
+    payload = _request_json()
+    username = (request.headers.get('x-auth-user') or payload.get('username')
+                or request.args.get('username') or '')
+    key = (request.headers.get('x-auth-key') or payload.get('password')
+           or request.args.get('password') or '')
+    username = str(username).strip()
+    key = str(key).strip()
     if not username or not key:
         return None
     user = ub.session.query(ub.User).filter(ub.User.name == username).first()
     if not user or not user.kosync_key:
         return None
-    if key != kosync_md5(user.kosync_key):
+    # tolerate both the raw key and its md5, depending on what the client sends
+    if key not in (user.kosync_key, kosync_md5(user.kosync_key)):
         return None
     return user
 
@@ -90,22 +98,24 @@ def healthcheck():
 @kosync.route("/users/create", methods=["POST"])
 @csrf.exempt
 def create_user():
-    # accounts are the Calibre-Web users; the sync key is managed in the user profile
-    return _json({"message": "Registration is disabled, sign in with your Calibre-Web username "
-                             "and the KOSync key from your user profile"}, 403)
-
-
-@kosync.route("/users/auth", methods=["GET"])
-@csrf.exempt
-def auth_user():
+    # there are no separate sync accounts: registering with an existing
+    # Calibre-Web username and the matching profile key just authorizes
     payload = _request_json()
     username = str(payload.get('username') or '').strip()
-    password = str(payload.get('password') or '')
-    if not username or not password:
-        return _json({"message": "Credentials missing", "code": 2001}, 401)
-    user = ub.session.query(ub.User).filter(ub.User.name == username).first()
-    # the client sends md5(key), the key itself is stored in the user profile
-    if not user or not user.kosync_key or password != kosync_md5(user.kosync_key):
+    password = str(payload.get('password') or '').strip()
+    user = ub.session.query(ub.User).filter(ub.User.name == username).first() if username else None
+    if not user or not user.kosync_key or password not in (user.kosync_key, kosync_md5(user.kosync_key)):
+        return _json({"message": "Sign in with your Calibre-Web username and the KOSync key "
+                                 "from your user profile", "code": 2001}, 401)
+    return _json({"username": username, "authorized": kosync_md5(user.kosync_key)})
+
+
+@kosync.route("/users/auth", methods=["GET", "POST"])
+@csrf.exempt
+def auth_user():
+    # KOReader sends the credentials as x-auth-user / x-auth-key headers
+    user = _auth_user()
+    if not user:
         return _json({"message": "Bad credentials", "code": 2001}, 401)
     return _json({"authorized": kosync_md5(user.kosync_key)})
 
