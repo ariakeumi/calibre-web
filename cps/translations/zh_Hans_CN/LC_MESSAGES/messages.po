@@ -4469,3 +4469,47 @@ msgstr "封面已写入 EPUB 文件：%(file)s"
 #: cps/editbooks.py
 msgid "Failed to write cover into %(file)s: %(error)s"
 msgstr "写入 EPUB 封面失败 %(file)s：%(error)s"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Default sort for book lists"
+msgstr "书库列表默认排序"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Newest first (default)"
+msgstr "按添加时间新到旧（默认）"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Newest first"
+msgstr "按添加时间新到旧"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Oldest first"
+msgstr "按添加时间旧到新"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Title ascending (A-Z)"
+msgstr "书名 A 到 Z"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Title descending (Z-A)"
+msgstr "书名 Z 到 A"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Author ascending (A-Z)"
+msgstr "作者 A 到 Z"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Author descending (Z-A)"
+msgstr "作者 Z 到 A"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Publishing date, newest first"
+msgstr "出版日期新到旧"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Publishing date, oldest first"
+msgstr "出版日期旧到新"
+
+#: cps/themes/standard/templates/book_edit.html cps/themes/caliblur/templates/book_edit.html
+msgid "Change Cover"
+msgstr "修改封面"

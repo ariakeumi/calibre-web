@@ -259,10 +259,3 @@ $("#btn-upload-cover").on("change", function () {
     $("#upload-cover").text(filename);
 });
 
-$("#xchange").click(function () {
-    this.blur();
-    var title = $("#title").val();
-    $("#title").val($("#authors").val());
-    $("#authors").val(title);
-});
-

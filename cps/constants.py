@@ -41,6 +41,9 @@ TRANSLATIONS_DIR    = os.path.join(BASE_DIR, 'cps', 'translations')
 # here, keyed by book id, so the original book folders stay untouched
 COVER_SIDECAR_DIR   = '.covers'
 
+# valid values for the per-user default sort of book lists (see get_sort_function)
+LIST_SORT_PARAMS    = frozenset({'', 'new', 'old', 'abc', 'zyx', 'authaz', 'authza', 'pubnew', 'pubold'})
+
 # Cache dir - use CACHE_DIRECTORY environment variable, otherwise CACHE_DIR (for backwards compatibility),
 # otherwise use the default directory: cps/cache
 DEFAULT_CACHE_DIR   = os.path.join(BASE_DIR, 'cps', 'cache')

@@ -2140,6 +2140,9 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
             content.default_language = to_save["default_language"]
         if to_save.get("locale"):
             content.locale = to_save["locale"]
+        if "default_list_sort" in to_save:
+            sort_val = to_save["default_list_sort"] if to_save["default_list_sort"] in constants.LIST_SORT_PARAMS else ""
+            content.set_view_property('list', 'default_sort', sort_val)
         try:
             anonymous = content.is_anonymous
             content.role = constants.selected_roles(to_save)

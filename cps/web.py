@@ -341,8 +341,12 @@ def query_char_list(data_colum, db_link):
 
 def get_sort_function(sort_param, data):
     order = [db.Books.timestamp.desc()]
+    # fork: the sort buttons are removed from the list pages, the default sort comes
+    # from the user's profile and takes precedence over per-section stored sorts
+    user_default_sort = current_user.get_view_property('list', 'default_sort') \
+        if current_user and hasattr(current_user, 'get_view_property') else None
     if sort_param == 'stored':
-        sort_param = current_user.get_view_property(data, 'stored')
+        sort_param = user_default_sort or current_user.get_view_property(data, 'stored')
     else:
         current_user.set_view_property(data, 'stored', sort_param)
     if sort_param == 'pubnew':
@@ -1492,6 +1496,9 @@ def change_profile(kobo_support, local_oauth_check, oauth_status, translations, 
         current_user.random_books = 1 if to_save.get("show_random") == "on" else 0
         current_user.default_language = to_save.get("default_language", "all")
         current_user.locale = to_save.get("locale", "en")
+        if "default_list_sort" in to_save:
+            sort_val = to_save["default_list_sort"] if to_save["default_list_sort"] in constants.LIST_SORT_PARAMS else ""
+            current_user.set_view_property('list', 'default_sort', sort_val)
         old_state = current_user.kobo_only_shelves_sync
         # 1 -> 0: nothing has to be done
         # 0 -> 1: all synced books have to be added to archived books, + currently synced shelfs which
