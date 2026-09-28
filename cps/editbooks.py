@@ -37,7 +37,7 @@ from sqlalchemy.exc import OperationalError, IntegrityError, InterfaceError
 from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy.sql.expression import func
 
-from . import constants, logger, isoLanguages, gdriveutils, uploader, helper, kobo_sync_status
+from . import constants, logger, isoLanguages, gdriveutils, uploader, helper, kobo_sync_status, epub_helper
 from .clean_html import clean_string
 from . import config, ub, db, calibre_db
 from .services.worker import WorkerThread
@@ -46,7 +46,7 @@ from .render_template import render_title_template
 from .binary_helper import resolve_binary_path, SUPPORTED_UNRAR_BINARIES
 from .kobo_sync_status import change_archived_books
 from .redirect import get_redirect_location
-from .file_helper import validate_mime_type
+from .file_helper import validate_mime_type, store_book_cover_sidecar
 from .usermanagement import user_login_required, login_required_if_no_ano
 from .string_helper import strip_whitespaces
 
@@ -671,6 +671,7 @@ def do_edit_book(book_id, upload_formats=None):
         if config.config_use_google_drive:
             gdriveutils.updateGdriveCalibreFromLocal()
 
+        cover_from_url_saved = False
         if to_save.get("cover_url",):
             if not current_user.role_upload():
                 edit_error = True
@@ -682,10 +683,16 @@ def do_edit_book(book_id, upload_formats=None):
                 if result is True:
                     book.has_cover = 1
                     modify_date = True
+                    cover_from_url_saved = True
+                    _refresh_cover_sidecar(book)
                     helper.replace_cover_thumbnail_cache(book.id)
                 else:
                     edit_error = True
                     flash(error, category="error")
+
+        # fork: optionally write the new cover into the EPUB file itself
+        if (cover_upload_success or cover_from_url_saved) and to_save.get("embed_cover_epub") == "on":
+            embed_cover_in_epub_files(book)
 
         # Add default series_index to book
         modify_date |= edit_book_series_index(to_save.get("series_index"), book)
@@ -1518,6 +1525,44 @@ def upload_book_formats(requested_files, book, book_id, no_cover=True):
     return to_save, error
 
 
+def _refresh_cover_sidecar(book):
+    """The cover lookup prefers the sidecar dir; sync the freshly saved cover.jpg
+    into it so the new cover is actually displayed (and original folders only
+    hold the book's own cover file, never stale duplicates)."""
+    cover_file = os.path.join(config.get_book_path(), book.path, 'cover.jpg')
+    try:
+        if os.path.isfile(cover_file):
+            store_book_cover_sidecar(book.id, cover_file)
+    except OSError as ex:
+        log.error_or_exception("Failed to sync cover sidecar for book {}: {}".format(book.id, ex))
+
+
+def embed_cover_in_epub_files(book):
+    """Write the book cover (cover.jpg) into the EPUB file itself."""
+    epub_formats = [d for d in book.data if d.format.upper() in ('EPUB', 'EPUB3')]
+    if not epub_formats:
+        flash(_("Book has no EPUB format, cover not written into file"), category="warning")
+        return
+    cover_file = os.path.join(config.get_book_path(), book.path, 'cover.jpg')
+    if not os.path.isfile(cover_file):
+        return
+    with open(cover_file, 'rb') as f:
+        cover_data = f.read()
+    for data in epub_formats:
+        epub_file = os.path.join(config.get_book_path(), book.path, data.name + '.' + data.format.lower())
+        try:
+            epub_helper.update_cover_in_epub(epub_file, cover_data)
+            data.uncompressed_size = os.path.getsize(epub_file)
+        except Exception as ex:
+            log.error_or_exception("Failed to embed cover into {}: {}".format(epub_file, ex))
+            flash(_("Failed to write cover into %(file)s: %(error)s",
+                    file=data.name + '.' + data.format.lower(), error=ex), category="error")
+            continue
+        flash(_("Cover written into EPUB file: %(file)s",
+                file=data.name + '.' + data.format.lower()), category="success")
+    book.last_modified = datetime.now(timezone.utc)
+
+
 def upload_cover(cover_request, book):
     requested_file = cover_request.files.get('btn-upload-cover', None)
     if requested_file:
@@ -1528,6 +1573,7 @@ def upload_cover(cover_request, book):
                 return False
             ret, message = helper.save_cover(requested_file, book.path)
             if ret is True:
+                _refresh_cover_sidecar(book)
                 helper.replace_cover_thumbnail_cache(book.id)
                 return True
             else:

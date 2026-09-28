@@ -16,6 +16,9 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+import os
+import posixpath
+import time
 import zipfile
 from lxml import etree
 
@@ -55,6 +58,86 @@ def updateEpub(src, dest, filename, data, ):
 
 # Safe parser: disable entity resolution and network access to prevent XXE attacks
 _safe_parser = etree.XMLParser(resolve_entities=False, no_network=True)
+
+
+def _rewrite_epub(epub_path, replacements):
+    """Rewrite the epub archive, replacing the data of the given zip entries.
+    Entry order and compression settings are preserved, the mimetype entry
+    stays first and uncompressed as required by the EPUB spec."""
+    tmp_path = epub_path + '.cover_tmp'
+    with zipfile.ZipFile(epub_path, 'r') as zin, \
+            zipfile.ZipFile(tmp_path, 'w') as zout:
+        zout.comment = zin.comment
+        existing = set()
+        for item in zin.infolist():
+            existing.add(item.filename)
+            data = replacements.get(item.filename, zin.read(item.filename))
+            zout.writestr(item, data)
+        for entry, data in replacements.items():
+            if entry not in existing:
+                info = zipfile.ZipInfo(entry, date_time=time.localtime(time.time())[:6])
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                zout.writestr(info, data)
+    with zipfile.ZipFile(tmp_path) as check:
+        if check.testzip() is not None:
+            raise ValueError("Corrupted epub archive after cover update")
+    os.replace(tmp_path, epub_path)
+
+
+def _find_cover_item(tree):
+    """Find the manifest item referenced as cover (EPUB3 properties or EPUB2 meta tag)."""
+    manifest = tree.find(OPF + "manifest")
+    if manifest is None:
+        return None
+    for item in manifest.findall(OPF + "item"):
+        if "cover-image" in (item.get("properties") or "").split():
+            return item
+    for meta in tree.iter(OPF + "meta"):
+        if meta.get("name") == "cover":
+            item_id = meta.get("content")
+            for item in manifest.findall(OPF + "item"):
+                if item.get("id") == item_id:
+                    return item
+    return None
+
+
+def update_cover_in_epub(epub_path, cover_data, media_type="image/jpeg"):
+    """Write the given image into the epub file itself and reference it as cover.
+    The existing cover entry (EPUB2 or EPUB3 style) is replaced in place; if the
+    book has no cover yet, one is added and referenced in both styles. Raises
+    on failure, in which case the original file is left untouched."""
+    tree, cf_name = get_content_opf(epub_path)
+    opf_dir = posixpath.dirname(cf_name)
+    manifest = tree.find(OPF + "manifest")
+    item = _find_cover_item(tree)
+    replacements = {}
+
+    if item is not None:
+        entry = posixpath.normpath(posixpath.join(opf_dir, item.get("href")))
+        item.set("media-type", media_type)
+    else:
+        entry = posixpath.join(opf_dir, "cover.jpg")
+        new_item = etree.SubElement(manifest, OPF + "item")
+        new_item.set("id", "cover-image")
+        new_item.set("href", posixpath.relpath(entry, opf_dir) if opf_dir else "cover.jpg")
+        new_item.set("media-type", media_type)
+        new_item.set("properties", "cover-image")
+        for meta in tree.iter(OPF + "meta"):
+            if meta.get("name") == "cover":
+                meta.set("content", "cover-image")
+                break
+        else:
+            metadata = tree.find(OPF + "metadata")
+            meta = etree.Element(OPF + "meta")
+            meta.set("name", "cover")
+            meta.set("content", "cover-image")
+            metadata.append(meta)
+
+    replacements[cf_name] = etree.tostring(tree, xml_declaration=True, encoding="utf-8")
+    replacements[entry] = cover_data
+    _rewrite_epub(epub_path, replacements)
+    return entry
 
 
 def get_content_opf(file_path, ns=None):

@@ -4453,3 +4453,19 @@ msgstr "原地扫描并导入书籍"
 #: cps/themes/standard/templates/admin.html
 msgid "Registered books keep their original file names and folder structure. Files are never moved or renamed; covers are stored in the .covers folder of the library."
 msgstr "导入的书籍将保留原始文件名和目录结构，文件不会被移动或重命名；封面保存在书库的 .covers 文件夹中。"
+
+#: cps/themes/standard/templates/book_edit.html cps/themes/caliblur/templates/book_edit.html
+msgid "Also write the cover into the EPUB file"
+msgstr "同时将封面写入 EPUB 文件"
+
+#: cps/editbooks.py
+msgid "Book has no EPUB format, cover not written into file"
+msgstr "本书没有 EPUB 格式，未写入封面"
+
+#: cps/editbooks.py
+msgid "Cover written into EPUB file: %(file)s"
+msgstr "封面已写入 EPUB 文件：%(file)s"
+
+#: cps/editbooks.py
+msgid "Failed to write cover into %(file)s: %(error)s"
+msgstr "写入 EPUB 封面失败 %(file)s：%(error)s"

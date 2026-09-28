@@ -43,6 +43,9 @@ scanimport = Blueprint('scanimport', __name__)
 # the first format in this order becomes the one metadata is extracted from
 PREFERRED_FORMATS = ['epub', 'kepub', 'azw3', 'mobi', 'pdf']
 
+# NAS system folders that must never be scanned for books
+SKIP_DIRS = {'@eaDir', '#recycle', '@Recycle', '$RECYCLE.BIN', 'System Volume Information', 'lost+found'}
+
 
 @scanimport.route("/admin/scanimport", methods=["POST"])
 @user_login_required
@@ -65,7 +68,7 @@ def collect_book_groups(root):
     mirroring the convention that several formats of one book share the same file name."""
     groups = {}
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in SKIP_DIRS]
         rel_dir = os.path.relpath(dirpath, root).replace('\\', '/')
         if rel_dir == '.':
             rel_dir = ''

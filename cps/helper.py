@@ -672,23 +672,7 @@ def valid_email(emails):
 
 
 def valid_password(check_password):
-    if config.config_password_policy:
-        verify = ""
-        if config.config_password_min_length > 0:
-            verify += r"^(?=.{" + str(config.config_password_min_length) + ",}$)"
-        if config.config_password_number:
-            verify += r"(?=.*?\d)"
-        if config.config_password_lower:
-            verify += r"(?=.*?[\p{Ll}])"
-        if config.config_password_upper:
-            verify += r"(?=.*?[\p{Lu}])"
-        if config.config_password_character:
-            verify += r"(?=.*?[\p{Letter}])"
-        if config.config_password_special:
-            verify += r"(?=.*?[^\p{Letter}\s0-9])"
-        match = regex.match(verify, check_password)
-        if not match:
-            raise Exception(_("Password doesn't comply with password validation rules"))
+    # fork: password complexity rules disabled, any password is accepted
     return check_password
 # ################################# External interface #################################
 

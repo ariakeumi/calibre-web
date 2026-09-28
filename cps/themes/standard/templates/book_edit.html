@@ -138,6 +138,12 @@
         <div class="upload-cover-input-text" id="upload-cover"></div>
         <input id="btn-upload-cover" name="btn-upload-cover" type="file" accept=".jpg, .jpeg, .png, .webp">
       </div>
+      <div class="checkbox">
+        <label for="embed-cover-epub">
+          <input type="checkbox" id="embed-cover-epub" name="embed_cover_epub" checked>
+          {{_('Also write the cover into the EPUB file')}}
+        </label>
+      </div>
     {% endif %}
       {% if cc|length > 0 %}
         {% for c in cc %}
