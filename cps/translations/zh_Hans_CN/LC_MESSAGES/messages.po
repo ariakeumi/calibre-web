@@ -4513,3 +4513,31 @@ msgstr "出版日期旧到新"
 #: cps/themes/standard/templates/book_edit.html cps/themes/caliblur/templates/book_edit.html
 msgid "Change Cover"
 msgstr "修改封面"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "KOReader Progress Sync (KOSync)"
+msgstr "KOReader 阅读进度同步（KOSync）"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Sync Key (use as password in KOReader)"
+msgstr "同步密钥（在 KOReader 中作为密码填入）"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Regenerate Key"
+msgstr "重新生成密钥"
+
+#: cps/themes/standard/templates/user_edit.html cps/themes/caliblur/templates/user_edit.html
+msgid "Server address for KOReader:"
+msgstr "KOReader 服务器地址："
+
+#: cps/web.py
+msgid "New KOSync sync key generated, update it in your e-reader"
+msgstr "已生成新的 KOSync 同步密钥，请在阅读器上同步更新"
+
+#: cps/web.py
+msgid "Failed to generate a new KOSync sync key"
+msgstr "生成新的 KOSync 同步密钥失败"
+
+#: cps/themes/standard/templates/detail.html cps/themes/caliblur/templates/detail.html
+msgid "KOReader progress"
+msgstr "KOReader 阅读进度"

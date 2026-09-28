@@ -23,6 +23,7 @@ import json
 import mimetypes
 import chardet  # dependency of requests
 import copy
+from binascii import hexlify
 from importlib.metadata import metadata
 
 from flask import Blueprint, jsonify, request, redirect, send_from_directory, make_response, flash, abort, url_for
@@ -1558,6 +1559,13 @@ def profile():
 
     if request.method == "POST":
         change_profile(kobo_support, local_oauth_check, oauth_status, translations, languages)
+    elif current_user.is_authenticated and not current_user.is_anonymous and not current_user.kosync_key:
+        # generate the personal KOSync sync key on first visit to the profile
+        current_user.kosync_key = hexlify(os.urandom(18)).decode('utf-8')
+        try:
+            ub.session.commit()
+        except Exception:
+            ub.session.rollback()
     return render_title_template("user_edit.html",
                                  translations=translations,
                                  profile=1,
@@ -1569,6 +1577,21 @@ def profile():
                                  page="me",
                                  registered_oauth=local_oauth_check,
                                  oauth_status=oauth_status)
+
+
+@web.route("/kosync/regenerate_key", methods=["POST"])
+@user_login_required
+def regenerate_kosync_key():
+    if current_user.is_anonymous:
+        abort(403)
+    current_user.kosync_key = hexlify(os.urandom(18)).decode('utf-8')
+    try:
+        ub.session.commit()
+        flash(_("New KOSync sync key generated, update it in your e-reader"), category="success")
+    except Exception:
+        ub.session.rollback()
+        flash(_("Failed to generate a new KOSync sync key"), category="error")
+    return redirect(url_for("web.profile"))
 
 
 # ###################################Show single book ##################################################################
@@ -1632,6 +1655,19 @@ def read_book(book_id, book_format):
         return redirect(url_for("web.index"))
 
 
+def get_kosync_progress(book_id):
+    """KOReader reading progress of the current user on this book, if the book's
+    document hashes are known and progress has been synced."""
+    if not current_user or current_user.is_anonymous:
+        return None
+    try:
+        from .kosync import get_book_progress
+        return get_book_progress(int(book_id), int(current_user.id))
+    except Exception as ex:
+        log.debug("KOSync progress lookup failed: %s", ex)
+        return None
+
+
 @web.route("/book/<int:book_id>")
 @login_required_if_no_ano
 def show_book(book_id):
@@ -1674,6 +1710,7 @@ def show_book(book_id):
                                      is_xhr=request.headers.get('X-Requested-With') == 'XMLHttpRequest',
                                      title=entry.title,
                                      books_shelfs=book_in_shelves,
+                                     kosync_progress=get_kosync_progress(book_id),
                                      page="book")
     else:
         log.debug("Selected book is unavailable. File does not exist or is not accessible")

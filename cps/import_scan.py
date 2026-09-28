@@ -284,4 +284,9 @@ def _import_book(session, rel_dir, stem, files, rar_executable):
         session.add(db.Metadata_Dirtied(book.id))
     session.commit()
     add_book_to_thumbnail_cache(book.id)
+    try:
+        from .kosync import map_book_documents
+        map_book_documents(book)
+    except Exception as ex:
+        log.warning("KOSync document mapping failed for book %s: %s", book.id, ex)
     return book.id

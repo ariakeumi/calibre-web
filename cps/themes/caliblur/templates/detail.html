@@ -279,6 +279,12 @@
                     <p>{{ _('Published') }}: {{ entry.pubdate|formatdate }} </p>
                 </div>
             {% endif %}
+            {% if kosync_progress %}
+                <div class="kosync-progress">
+                    <p>{{ _('KOReader progress') }}: {{ (kosync_progress.percentage * 100)|formatfloat }}%
+                    {% if kosync_progress.device %} ({{ kosync_progress.device }}){% endif %}</p>
+                </div>
+            {% endif %}
             {% if cc|length > 0 %}
 
 

@@ -84,6 +84,20 @@
       <div class="btn btn-default" id="kobo_full_sync" data-value="{% if current_user.role_admin() %}{{ content.id }}{% else %}0{% endif %}" {% if not content.remote_auth_token.first() %} style="display: none;" {% endif %}>{{_('Force full kobo sync')}}</div>
     </div>
     {% endif %}
+    {% if not new_user and not content.role_anonymous() and (profile or current_user.role_admin()) %}
+    <label>{{_('KOReader Progress Sync (KOSync)')}}</label>
+    <div class="form-group col">
+      <label for="kosync_key">{{_('Sync Key (use as password in KOReader)')}}</label>
+      <input type="text" class="form-control" id="kosync_key" value="{{ content.kosync_key }}" readonly>
+      {% if profile %}
+      <form action="{{ url_for('web.regenerate_kosync_key') }}" method="POST" class="form-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-default" id="kosync_regenerate">{{_('Regenerate Key')}}</button>
+      </form>
+      {% endif %}
+      <p class="help-block">{{_('Server address for KOReader:')}} <code>{{ url_for('kosync.healthcheck', _external=True) | replace('/healthcheck', '') }}</code></p>
+    </div>
+    {% endif %}
     <div class="col-sm-6">
     {% for element in sidebar %}
       {% if element['config_show'] %}

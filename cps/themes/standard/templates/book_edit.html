@@ -12,20 +12,6 @@
       {% endif %}
       <button type="submit" class="btn btn-primary" id="submit" form="book_edit_frm">{{_('Save')}}</button>
     </div>
-{% if current_user.role_delete_books() %}
-    <div class="text-center">
-      <button type="button" class="btn btn-danger" id="delete" data-toggle="modal" data-delete-id="{{ book.id }}" data-target="#deleteModal">{{_("Delete Book")}}</button>
-    </div>
-    {% if book.data|length > 1 %}
-      <div class="text-center more-stuff"><h4>{{_('Delete formats:')}}</h4>
-      {% for file in book.data %}
-        <div class="form-group">
-          <button type="button" class="btn btn-danger" id="delete_format" data-toggle="modal" data-delete-id="{{ book.id }}" data-delete-format="{{ file.format }}" data-target="#deleteModal">{{_('Delete')}} - {{file.format}}</button>
-        </div>
-      {% endfor %}
-      </div>
-    {% endif %}
-{% endif %}
 
 {%  if source_formats|length > 0 and conversion_formats|length > 0 %}
   <div class="text-center more-stuff"><h4>{{_('Convert book format:')}}</h4>
@@ -68,6 +54,20 @@
     </div>
   </form>
   </div>
+{% endif %}
+{% if current_user.role_delete_books() %}
+    <div class="text-center">
+      <button type="button" class="btn btn-danger" id="delete" data-toggle="modal" data-delete-id="{{ book.id }}" data-target="#deleteModal">{{_("Delete Book")}}</button>
+    </div>
+    {% if book.data|length > 1 %}
+      <div class="text-center more-stuff"><h4>{{_('Delete formats:')}}</h4>
+      {% for file in book.data %}
+        <div class="form-group">
+          <button type="button" class="btn btn-danger" id="delete_format" data-toggle="modal" data-delete-id="{{ book.id }}" data-delete-format="{{ file.format }}" data-target="#deleteModal">{{_('Delete')}} - {{file.format}}</button>
+        </div>
+      {% endfor %}
+      </div>
+    {% endif %}
 {% endif %}
 </div>
 <form role="form" action="{{ url_for('edit-book.edit_book', book_id=book.id) }}" method="post" enctype="multipart/form-data" id="book_edit_frm">

@@ -1005,6 +1005,7 @@ def delete_whole_book(book_id, book):
     # delete book from shelves, Downloads, Read list
     ub.session.query(ub.BookShelf).filter(ub.BookShelf.book_id == book_id).delete()
     ub.session.query(ub.ReadBook).filter(ub.ReadBook.book_id == book_id).delete()
+    ub.session.query(ub.KosyncDocument).filter(ub.KosyncDocument.book_id == book_id).delete()
     ub.delete_download(book_id)
     ub.session_commit()
 

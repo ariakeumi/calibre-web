@@ -40,7 +40,7 @@ except ImportError as e:
     except ImportError as e:
         OAuthConsumerMixin = BaseException
         oauth_support = False
-from sqlalchemy import create_engine, exc, exists, event, text
+from sqlalchemy import create_engine, exc, exists, event, text, UniqueConstraint
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON
 from sqlalchemy.orm.attributes import flag_modified
@@ -257,6 +257,7 @@ class User(UserBase, Base):
     remote_auth_token = relationship('RemoteAuthToken', backref='user', lazy='dynamic')
     view_settings = Column(JSON, default={})
     kobo_only_shelves_sync = Column(Integer, default=0)
+    kosync_key = Column(String, default="")
 
 
 if oauth_support:
@@ -546,6 +547,34 @@ class RemoteAuthToken(Base):
         return '<Token %r>' % self.id
 
 
+class KosyncProgress(Base):
+    __tablename__ = 'kosync_progress'
+    __table_args__ = (UniqueConstraint('user_id', 'document', name='uq_kosync_user_document'),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    document = Column(String(32), nullable=False)
+    progress = Column(String, default="")
+    percentage = Column(Float, default=0.0)
+    device = Column(String, default="")
+    device_id = Column(String, default="")
+    timestamp = Column(DateTime, default=lambda: datetime.now())
+
+    def __repr__(self):
+        return '<KosyncProgress %r/%r>' % (self.user_id, self.document)
+
+
+class KosyncDocument(Base):
+    __tablename__ = 'kosync_document'
+
+    id = Column(Integer, primary_key=True)
+    document = Column(String(32), unique=True, nullable=False)
+    book_id = Column(Integer, nullable=False)
+
+    def __repr__(self):
+        return '<KosyncDocument %r>' % self.document
+
+
 def filename(context):
     file_format = context.get_current_parameters()['format']
     if file_format == 'jpeg':
@@ -574,6 +603,10 @@ def add_missing_tables(engine, _session):
         ArchivedBook.__table__.create(bind=engine)
     if not engine.dialect.has_table(engine.connect(), "thumbnail"):
         Thumbnail.__table__.create(bind=engine)
+    if not engine.dialect.has_table(engine.connect(), "kosync_progress"):
+        KosyncProgress.__table__.create(bind=engine)
+    if not engine.dialect.has_table(engine.connect(), "kosync_document"):
+        KosyncDocument.__table__.create(bind=engine)
 
 
 # migrate all settings missing in registration table
@@ -624,6 +657,19 @@ def migrate_Database(_session):
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
     migrate_remote_auth_token_table(engine, _session)
+    migrate_kosync_column(engine, _session)
+
+
+# add the kosync_key column to the user table of pre-existing installations
+def migrate_kosync_column(engine, _session):
+    try:
+        _session.query(exists().where(User.kosync_key != '')).scalar()
+        _session.commit()
+    except exc.OperationalError:  # Database is not compatible, some columns are missing
+        with engine.connect() as conn:
+            trans = conn.begin()
+            conn.execute(text("ALTER TABLE user ADD COLUMN kosync_key VARCHAR DEFAULT ''"))
+            trans.commit()
 
 
 def clean_database(_session):
