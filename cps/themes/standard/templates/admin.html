@@ -221,6 +221,21 @@
     <a class="btn btn-default" id="logfile" href="{{url_for('admin.view_logfile')}}">{{_('View Logs')}}</a>
   </div>
   <div class="row form-group">
+    <h2>{{_('Scan Library')}}</h2>
+    <form action="{{ url_for('scanimport.queue_scan_import') }}" method="POST" class="form-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label class="sr-only" for="scan_subpath">{{_('Library subfolder')}}</label>
+        <input type="text" class="form-control" id="scan_subpath" name="scan_subpath"
+               placeholder="{{_('Library subfolder (optional)')}}">
+      </div>
+      <button type="submit" class="btn btn-primary" id="scan_import">{{_('Scan and Import Books in Place')}}</button>
+    </form>
+    <p class="help-block">
+      {{_('Registered books keep their original file names and folder structure. Files are never moved or renamed; covers are stored in the .covers folder of the library.')}}
+    </p>
+  </div>
+  <div class="row form-group">
     <div class="btn btn-default" id="restart_database" data-toggle="modal" data-target="#StatusDialog">{{_('Reconnect Calibre Database')}}</div>
   </div>
   <div class="row form-group">

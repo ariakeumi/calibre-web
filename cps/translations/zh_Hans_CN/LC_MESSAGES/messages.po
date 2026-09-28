@@ -4409,3 +4409,47 @@ msgstr "同步所选书架到 Kobo"
 msgid "Show Read/Unread Section"
 msgstr "显示已读、未读栏目"
 
+
+#: cps/import_scan.py
+msgid "Invalid subfolder path"
+msgstr "无效的子文件夹路径"
+
+#: cps/import_scan.py
+msgid "Library scan queued, check the Tasks page for progress"
+msgstr "书库扫描已加入队列，请到任务页面查看进度"
+
+#: cps/import_scan.py
+msgid "%(count)s book(s) found, importing"
+msgstr "找到 %(count)s 本书，正在导入"
+
+#: cps/import_scan.py
+msgid "No importable book files found"
+msgstr "未找到可导入的书籍文件"
+
+#: cps/import_scan.py
+msgid "Imported %(imported)s book(s), %(skipped)s already in library (of %(total)s)"
+msgstr "已导入 %(imported)s 本，%(skipped)s 本已在书库中（共 %(total)s 本）"
+
+#: cps/tasks/scan.py cps/themes/standard/templates/admin.html
+msgid "Scan Library"
+msgstr "扫描书库"
+
+#: cps/tasks/scan.py
+msgid "Scanning library"
+msgstr "正在扫描书库"
+
+#: cps/themes/standard/templates/admin.html
+msgid "Library subfolder"
+msgstr "书库子文件夹"
+
+#: cps/themes/standard/templates/admin.html
+msgid "Library subfolder (optional)"
+msgstr "书库子文件夹（可选）"
+
+#: cps/themes/standard/templates/admin.html
+msgid "Scan and Import Books in Place"
+msgstr "原地扫描并导入书籍"
+
+#: cps/themes/standard/templates/admin.html
+msgid "Registered books keep their original file names and folder structure. Files are never moved or renamed; covers are stored in the .covers folder of the library."
+msgstr "导入的书籍将保留原始文件名和目录结构，文件不会被移动或重命名；封面保存在书库的 .covers 文件夹中。"

@@ -57,6 +57,7 @@ from .string_helper import strip_whitespaces
 from .tasks.convert import TaskConvert
 from . import logger, config, db, ub, fs
 from . import gdriveutils as gd
+from .file_helper import get_local_book_cover_path, remove_book_cover_sidecar
 from .constants import (STATIC_DIR as _STATIC_DIR, CACHE_TYPE_THUMBNAILS, THUMBNAIL_TYPE_COVER, THUMBNAIL_TYPE_SERIES,
                         SUPPORTED_CALIBRE_BINARIES)
 from .binary_helper import resolve_binary_path, SUPPORTED_UNRAR_BINARIES
@@ -356,43 +357,41 @@ def edit_book_read_status(book_id, read_status=None):
 
 # Deletes a book from the local filestorage, returns True if deleting is successful, otherwise false
 def delete_book_file(book, calibrepath, book_format=None):
-    # check that path is 2 elements deep, check that target path has no sub folders
-    if book.path.count('/') == 1:
-        path = os.path.join(calibrepath, book.path)
-        if book_format:
-            for file in os.listdir(path):
-                if file.upper().endswith("."+book_format):
-                    os.remove(os.path.join(path, file))
-            return True, None
-        else:
-            if os.path.isdir(path):
-                try:
-                    for root, folders, files in os.walk(path):
-                        for f in files:
-                            os.unlink(os.path.join(root, f))
-                        if len(folders):
-                            log.warning("Deleting book {} failed, path {} has subfolders: {}".format(book.id,
-                                        book.path, folders))
-                            return True, _("Deleting bookfolder for book %(id)s failed, path has subfolders: %(path)s",
-                                           id=book.id,
-                                           path=book.path)
-                    shutil.rmtree(path)
-                except (IOError, OSError) as ex:
-                    log.error("Deleting book %s failed: %s", book.id, ex)
-                    return False, _("Deleting book %(id)s failed: %(message)s", id=book.id, message=ex)
-                authorpath = os.path.join(calibrepath, os.path.split(book.path)[0])
-                if not os.listdir(authorpath):
-                    try:
-                        shutil.rmtree(authorpath)
-                    except (IOError, OSError) as ex:
-                        log.error("Deleting authorpath for book %s failed: %s", book.id, ex)
-                return True, None
-
-    log.error("Deleting book %s from database only, book path in database not valid: %s",
-              book.id, book.path)
-    return True, _("Deleting book %(id)s from database only, book path in database not valid: %(path)s",
-                   id=book.id,
-                   path=book.path)
+    # Books imported in place may share their folder with other books, so only the
+    # book's own files (formats + sidecar cover) are removed; afterwards empty
+    # folders are pruned bottom-up, stopping at the first non-empty one.
+    # An empty book.path is valid: those files live directly in the library root.
+    path = os.path.join(calibrepath, book.path)
+    if not os.path.isdir(path):
+        log.error("Deleting book %s from database only, book path in database not valid: %s",
+                  book.id, book.path)
+        return True, _("Deleting book %(id)s from database only, book path in database not valid: %(path)s",
+                       id=book.id,
+                       path=book.path)
+    try:
+        remove_book_cover_sidecar(book.id)
+        for file_format in book.data:
+            if book_format and file_format.format.upper() != book_format.upper():
+                continue
+            format_file = os.path.join(path, file_format.name + '.' + file_format.format.lower())
+            if os.path.isfile(format_file):
+                os.remove(format_file)
+        if not book_format:
+            cover_file = os.path.join(path, "cover.jpg")
+            if os.path.isfile(cover_file):
+                os.remove(cover_file)
+        current_dir = path
+        root_dir = os.path.abspath(calibrepath)
+        while os.path.abspath(current_dir) != root_dir:
+            if not os.listdir(current_dir):
+                os.rmdir(current_dir)
+                current_dir = os.path.dirname(current_dir)
+            else:
+                break
+        return True, None
+    except (IOError, OSError) as ex:
+        log.error("Deleting book %s failed: %s", book.id, ex)
+        return False, _("Deleting book %(id)s failed: %(message)s", id=book.id, message=ex)
 
 def rename_all_files_on_change(one_book, new_path, old_path, all_new_name, gdrive=False):
     for file_format in one_book.data:
@@ -474,22 +473,24 @@ def update_dir_structure_file(book_id, calibre_path, original_filepath, new_auth
                                      db_filename,
                                      original_filepath,
                                      path)
-        if not error:
+        if not error and not original_filepath:
             new_path = os.path.join(calibre_path, new_author_dir, new_title_dir).replace('\\', '/')
             all_new_name = get_valid_filename(local_book.title, chars=42) + ' - ' \
                            + get_valid_filename(new_author, chars=42)
             # Book folder already moved, only files need to be renamed
             renameerror = rename_all_files_on_change(local_book, new_path, new_path, all_new_name)
+            if renameerror:
+                return renameerror
 
-        if error or renameerror:
-            return error or renameerror
+        if error:
+            return error
     return False
 
 
 def upload_new_file_gdrive(book_id, first_author, title, title_dir, original_filepath, filename_ext):
     book = calibre_db.get_book(book_id)
-    file_name = get_valid_filename(title, chars=42) + ' - ' + \
-        get_valid_filename(first_author, chars=42) + filename_ext
+    # filename_ext already contains the complete target file name (original name preserved)
+    file_name = filename_ext
     gdrive_path = os.path.join(get_valid_filename(first_author, chars=96),
                                title_dir + " (" + str(book_id) + ")")
     book.path = gdrive_path.replace("\\", "/")
@@ -766,9 +767,9 @@ def get_book_cover_internal(book, resolution=None):
 
         # Send the book cover from the Calibre directory
         else:
-            cover_file_path = os.path.join(config.get_book_path(), book.path)
-            if os.path.isfile(os.path.join(cover_file_path, "cover.jpg")):
-                return send_from_directory(cover_file_path, "cover.jpg")
+            cover_file_path = get_local_book_cover_path(book)
+            if os.path.isfile(cover_file_path):
+                return send_from_directory(os.path.dirname(cover_file_path), os.path.basename(cover_file_path))
             else:
                 return get_cover_on_failure()
     else:

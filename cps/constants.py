@@ -37,6 +37,10 @@ STATIC_DIR          = os.path.join(BASE_DIR, 'cps', 'static')
 TEMPLATES_DIR       = os.path.join(BASE_DIR, 'cps', 'templates')
 TRANSLATIONS_DIR    = os.path.join(BASE_DIR, 'cps', 'translations')
 
+# Covers of books imported in place (original folder structure preserved) are stored
+# here, keyed by book id, so the original book folders stay untouched
+COVER_SIDECAR_DIR   = '.covers'
+
 # Cache dir - use CACHE_DIRECTORY environment variable, otherwise CACHE_DIR (for backwards compatibility),
 # otherwise use the default directory: cps/cache
 DEFAULT_CACHE_DIR   = os.path.join(BASE_DIR, 'cps', 'cache')

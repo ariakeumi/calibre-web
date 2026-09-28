@@ -24,7 +24,7 @@ import mimetypes
 import hashlib
 from io import BytesIO
 
-from . import logger
+from . import logger, constants
 
 log = logger.create()
 
@@ -58,6 +58,36 @@ def get_temp_dir():
 def del_temp_dir():
     tmp_dir = get_temp_dir()
     shutil.rmtree(tmp_dir)
+
+
+def get_local_book_cover_path(book):
+    # Books imported in place keep their covers in the sidecar dir (keyed by book id),
+    # so no files need to be written into the original book folders. Books living in
+    # calibre-style folders still use the classic cover.jpg.
+    from . import config
+    sidecar_cover = os.path.join(config.get_book_path(), constants.COVER_SIDECAR_DIR, str(book.id) + '.jpg')
+    if os.path.isfile(sidecar_cover):
+        return sidecar_cover
+    return os.path.join(config.get_book_path(), book.path, 'cover.jpg')
+
+
+def store_book_cover_sidecar(book_id, cover_source_path):
+    from . import config
+    sidecar_dir = os.path.join(config.get_book_path(), constants.COVER_SIDECAR_DIR)
+    os.makedirs(sidecar_dir, exist_ok=True)
+    dest = os.path.join(sidecar_dir, str(book_id) + '.jpg')
+    shutil.copyfile(cover_source_path, dest)
+    return dest
+
+
+def remove_book_cover_sidecar(book_id):
+    from . import config
+    sidecar_cover = os.path.join(config.get_book_path(), constants.COVER_SIDECAR_DIR, str(book_id) + '.jpg')
+    try:
+        if os.path.isfile(sidecar_cover):
+            os.remove(sidecar_cover)
+    except OSError as e:
+        log.error("Failed to remove sidecar cover for book %s: %s", book_id, e)
 
 
 def validate_mime_type(file_buffer, allowed_extensions):

@@ -119,7 +119,10 @@ def upload():
                 if error:
                     return error
 
-                db_book, input_authors, title_dir = create_book_on_upload(modify_date, meta)
+                # keep the original file name, only strip any path components a client might have sent
+                original_name = os.path.basename(requested_file.filename.rsplit('.', 1)[0]) \
+                    .replace('/', '_').replace('\\', '_').lstrip('.')
+                db_book, input_authors, title_dir = create_book_on_upload(modify_date, meta, original_name)
 
                 # Comments need book id therefore only possible after flush
                 modify_date |= edit_book_comments(Markup(meta.description).unescape(), db_book)
@@ -132,16 +135,13 @@ def upload():
                                                   title,
                                                   title_dir,
                                                   meta.file_path,
-                                                  meta.extension.lower())
-                    for file_format in db_book.data:
-                        file_format.name = (helper.get_valid_filename(title, chars=42) + ' - '
-                                            + helper.get_valid_filename(input_authors[0], chars=42))
+                                                  original_name + meta.extension.lower())
                 else:
                     error = helper.update_dir_structure(book_id,
                                                         config.get_book_path(),
                                                         input_authors[0],
                                                         meta.file_path,
-                                                        title_dir + meta.extension.lower())
+                                                        original_name + meta.extension.lower())
                 move_coverfile(meta, db_book)
                 if modify_date:
                     calibre_db.set_metadata_dirty(book_id)
@@ -385,16 +385,10 @@ def edit_book_param(param, vals, multi=False):
             elif param == 'title':
                 sort_param = book.sort
                 if handle_title_on_edit(book, vals.get('value', "")):
-                    rename_error = helper.update_dir_structure(book.id, config.get_book_path())
-                    if not rename_error:
-                        calibre_db.session.commit()
-                        ret = {"success":True,
-                               "newValue":book.title}
-                    else:
-                        calibre_db.session.rollback()
-                        ret = {"success":False, "msg":rename_error}
-                        if multi:
-                            out.append(ret)
+                    # fork: keep files in place, no folder/file renaming on metadata edit
+                    calibre_db.session.commit()
+                    ret = {"success":True,
+                           "newValue":book.title}
             elif param == 'sort':
                 book.sort = vals['value']
                 ret = {"success":True,
@@ -405,16 +399,10 @@ def edit_book_param(param, vals, multi=False):
                        "newValue":book.comments[0].text}
             elif param == 'authors':
                 input_authors, __ = handle_author_on_edit(book, vals['value'], vals.get('checkA', None) == True)
-                rename_error = helper.update_dir_structure(book.id, config.get_book_path(), input_authors[0])
-                if not rename_error:
-                    calibre_db.session.commit()
-                    ret = {"success":True,
-                        "newValue":' & '.join([author.replace('|', ',') for author in input_authors])}
-                else:
-                    calibre_db.session.rollback()
-                    ret = {"success":False, "msg":rename_error}
-                    if multi:
-                        out.append(ret)
+                # fork: keep files in place, no folder/file renaming on metadata edit
+                calibre_db.session.commit()
+                ret = {"success":True,
+                    "newValue":' & '.join([author.replace('|', ',') for author in input_authors])}
             elif param == 'is_archived':
                 is_archived = change_archived_books(book.id, vals['value'] == "True",
                                                     message="Book {} archive bit set to: {}".format(book.id,
@@ -613,8 +601,8 @@ def table_xchange_author_title():
                 gdriveutils.updateGdriveCalibreFromLocal()
 
             if edited_books_id:
-                # toDo: Handle error
-                edit_error = helper.update_dir_structure(edited_books_id, config.get_book_path(), input_authors[0])
+                # fork: keep files in place, no folder/file renaming on metadata edit
+                pass
             if modify_date:
                 book.last_modified = datetime.now(timezone.utc)
                 calibre_db.set_metadata_dirty(book.id)
@@ -661,9 +649,8 @@ def do_edit_book(book_id, upload_formats=None):
             if author_change or title_change:
                 edited_books_id = book.id
                 modify_date = True
-                title_author_error = helper.update_dir_structure(edited_books_id,
-                                                                 config.get_book_path(),
-                                                                 input_authors[0])
+                # fork: keep files in place, no folder/file renaming on metadata edit
+                title_author_error = None
             if title_author_error:
                 flash(title_author_error, category="error")
                 calibre_db.session.rollback()
@@ -855,23 +842,9 @@ def prepare_authors(authr, calibre_path, gdrive=False):
                         author_index = -1
                 else:
                     author_index = -1
-                # change book path if changed author is first author -> match on first position
-                if author_index == 0:
-                    one_titledir = one_book.path.split('/')[1]
-                    one_old_authordir = one_book.path.split('/')[0]
-                    # rename author path only once per renamed author -> search all books with author name in book.path
-                    # das muss einmal geschehen aber pro Buch geprüft werden ansonsten habe ich das Problem das vlt. 2 gleiche Ordner bis auf Groß/Kleinschreibung vorhanden sind im Umzug
-                    new_author_dir = helper.rename_author_path(in_aut, one_old_authordir, renamed_author.name, calibre_path, gdrive)
-                    one_book.path = os.path.join(new_author_dir, one_titledir).replace('\\', '/')
-                    # rename all books in book data with the new author name and move corresponding files to new locations
-                    # old_path = os.path.join(calibre_path, new_author_dir, one_titledir)
-                    new_path = os.path.join(calibre_path, new_author_dir, one_titledir)
-                    all_new_name = helper.get_valid_filename(one_book.title, chars=42) + ' - ' \
-                                   + helper.get_valid_filename(renamed_author.name, chars=42)
-                    # change location in database to new author/title path
-                    error = helper.rename_all_files_on_change(one_book, new_path, new_path, all_new_name, gdrive)
-                    if error:
-                        flash(error)
+                # fork: books may live in their original folder structure, shared with other books.
+                # Renaming author folders or book files on disk would destroy that, so only the
+                # author_sort strings above are updated; files and book.path stay untouched.
     return input_authors
 
 
@@ -905,7 +878,7 @@ def prepare_authors_on_upload(title, authr):
     return sort_authors, input_authors, db_author
 
 
-def create_book_on_upload(modify_date, meta):
+def create_book_on_upload(modify_date, meta, original_name=None):
     title = meta.title
     authr = meta.author
     sort_authors, input_authors, db_author = prepare_authors_on_upload(title, authr)
@@ -915,6 +888,9 @@ def create_book_on_upload(modify_date, meta):
 
     # combine path and normalize path from Windows systems
     path = os.path.join(author_dir, title_dir).replace('\\', '/')
+
+    # keep the original file name if provided, otherwise fall back to the calibre-style name
+    data_name = original_name if original_name else title_dir
 
     try:
         pubdate = datetime.strptime(meta.pubdate[:10], "%Y-%m-%d")
@@ -949,7 +925,7 @@ def create_book_on_upload(modify_date, meta):
 
     # Add file to book
     file_size = os.path.getsize(meta.file_path)
-    db_data = db.Data(db_book, meta.extension.upper()[1:], file_size, title_dir)
+    db_data = db.Data(db_book, meta.extension.upper()[1:], file_size, data_name)
     db_book.data.append(db_data)
     calibre_db.session.add(db_book)
 

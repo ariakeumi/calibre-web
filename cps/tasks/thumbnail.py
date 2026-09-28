@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 
 from .. import constants
 from cps import config, db, fs, gdriveutils, logger, ub, app
+from cps.file_helper import get_local_book_cover_path
 from cps.services.worker import CalibreTask, STAT_CANCELLED, STAT_ENDED
 from sqlalchemy import func, text, or_
 from flask_babel import lazy_gettext as N_
@@ -212,7 +213,7 @@ class TaskGenerateCoverThumbnails(CalibreTask):
                     if stream is not None:
                         stream.close()
             else:
-                book_cover_filepath = os.path.join(config.get_book_path(), book.path, 'cover.jpg')
+                book_cover_filepath = get_local_book_cover_path(book)
                 if not os.path.isfile(book_cover_filepath):
                     raise Exception('Book cover file not found')
 
@@ -409,7 +410,7 @@ class TaskGenerateSeriesThumbnails(CalibreTask):
                         if stream is not None:
                             stream.close()
 
-                book_cover_filepath = os.path.join(config.get_book_path(), book.path, 'cover.jpg')
+                book_cover_filepath = get_local_book_cover_path(book)
                 if not os.path.isfile(book_cover_filepath):
                     raise Exception('Book cover file not found')
 
