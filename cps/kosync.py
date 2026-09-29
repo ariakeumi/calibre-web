@@ -146,6 +146,32 @@ def get_progress(document=None):
                   if entry.timestamp else int(datetime.now(timezone.utc).timestamp())})
 
 
+def upsert_progress(user_id, document, percentage, progress, device, device_id=""):
+    """Store the reading position, keeping only the furthest one per user+document."""
+    entry = (ub.session.query(ub.KosyncProgress)
+             .filter(ub.KosyncProgress.user_id == user_id)
+             .filter(ub.KosyncProgress.document == document)
+             .first())
+    if entry is None:
+        entry = ub.KosyncProgress(user_id=user_id, document=document)
+        ub.session.add(entry)
+    elif percentage < entry.percentage - 0.001:
+        # only the furthest reading position is kept, like the official sync server
+        return entry, False
+    entry.progress = progress
+    entry.percentage = percentage
+    entry.device = device
+    entry.device_id = device_id
+    entry.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        ub.session.commit()
+    except Exception as ex:
+        ub.session.rollback()
+        log.error_or_exception("KOSync progress update failed: %s", ex)
+        return None, False
+    return entry, True
+
+
 @kosync.route("/syncs/progress", methods=["PUT"])
 @csrf.exempt
 def put_progress():
@@ -165,28 +191,8 @@ def put_progress():
     device = str(payload.get('device') or '')
     device_id = str(payload.get('device_id') or '')
 
-    entry = (ub.session.query(ub.KosyncProgress)
-             .filter(ub.KosyncProgress.user_id == user.id)
-             .filter(ub.KosyncProgress.document == document)
-             .first())
+    entry, _updated = upsert_progress(user.id, document, percentage, progress, device, device_id)
     if entry is None:
-        entry = ub.KosyncProgress(user_id=user.id, document=document)
-        ub.session.add(entry)
-    elif percentage < entry.percentage - 0.001:
-        # only the furthest reading position is kept, like the official sync server
-        return _json({"document": entry.document,
-                      "progress": entry.progress,
-                      "percentage": entry.percentage}, 200)
-    entry.progress = progress
-    entry.percentage = percentage
-    entry.device = device
-    entry.device_id = device_id
-    entry.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
-    try:
-        ub.session.commit()
-    except Exception as ex:
-        ub.session.rollback()
-        log.error_or_exception("KOSync progress update failed: %s", ex)
         return _json({"message": "Database error", "code": 2000}, 500)
     return _json({"document": entry.document,
                   "progress": entry.progress,
@@ -245,6 +251,38 @@ def map_book_documents(book, session=None):
             session.rollback()
             log.error_or_exception("KOSync document mapping failed: %s", ex)
     return added
+
+
+def record_reader_progress(book_id, book_format, percentage, progress, device="Calibre-Web"):
+    """Store progress made in the built-in web reader under the document hash of
+    the requested file format, so it is visible to KOReader/Readest and on the
+    book page. The hash is computed from the file itself (cheap sparse read)."""
+    from . import calibre_db, config
+    from .cw_login import current_user
+    import os
+    percentage = max(0.0, min(1.0, percentage))
+    book = calibre_db.get_book(book_id)
+    if not book:
+        return None
+    data = next((d for d in book.data if d.format.lower() == book_format.lower()), None)
+    if not data:
+        return None
+    file_path = os.path.join(config.get_book_path(), book.path,
+                             data.name + '.' + data.format.lower())
+    try:
+        document = partial_md5(file_path)
+    except (OSError, IOError) as ex:
+        log.warning("KOSync: cannot hash %s: %s", file_path, ex)
+        return None
+    if not ub.session.query(ub.KosyncDocument).filter(ub.KosyncDocument.document == document).first():
+        ub.session.add(ub.KosyncDocument(document=document, book_id=book.id))
+        try:
+            ub.session.commit()
+        except Exception as ex:
+            ub.session.rollback()
+            log.error_or_exception("KOSync document mapping failed: %s", ex)
+    entry, _updated = upsert_progress(int(current_user.id), document, percentage, progress, device)
+    return entry
 
 
 def get_book_progress(book_id, user_id):

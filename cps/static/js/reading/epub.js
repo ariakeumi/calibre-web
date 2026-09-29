@@ -90,6 +90,7 @@ var reader;
         make_locations
             .then(() => {
                 // Try to restore last position (CFI) from localStorage if present
+                var restored = false;
                 try {
                     var _savedPos = localStorage.getItem(position_key);
                     if (_savedPos) {
@@ -99,9 +100,23 @@ var reader;
                                 // Display the saved CFI location
                                 try {
                                     reader.rendition.display(_posObj.cfi);
+                                    restored = true;
                                 } catch (e) {}
                             }
                         } catch (e) {}
+                    }
+                } catch (e) {}
+
+                // KOSync: if synced progress from another device is further than the
+                // local position, continue there instead
+                try {
+                    if (typeof calibre.kosyncPercentage === "number" &&
+                        (!restored || kosyncFurtherThanLocal(calibre.kosyncPercentage, position_key))) {
+                        var kosyncCfi = reader.book.locations.cfiFromPercentage(calibre.kosyncPercentage);
+                        if (kosyncCfi) {
+                            reader.rendition.display(kosyncCfi);
+                            restored = true;
+                        }
                     }
                 } catch (e) {}
 
@@ -134,12 +149,58 @@ var reader;
                             JSON.stringify(posObj)
                         );
                     } catch (e) {}
+
+                    // KOSync: report the position so KOReader/Readest can continue here
+                    scheduleKosyncReport(location);
                 });
                 reader.rendition.reportLocation();
                 progressDiv.style.visibility = "visible";
             })
             .then(save_locations);
     });
+
+    /**
+     * KOSync helpers: report the web reader's position so it shows up on the book
+     * page and in KOReader/Readest, and decide whether synced progress is further
+     * than the locally stored one.
+     */
+    var kosyncTimer = null;
+
+    function scheduleKosyncReport(location) {
+        if (!calibre.kosyncUrl || typeof location.end.percentage !== "number") {
+            return;
+        }
+        if (kosyncTimer) {
+            clearTimeout(kosyncTimer);
+        }
+        kosyncTimer = setTimeout(function () {
+            var csrftoken = $("input[name='csrf_token']").val();
+            $.ajax(calibre.kosyncUrl, {
+                method: "post",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    percentage: location.end.percentage,
+                    progress: location.start.cfi || "",
+                }),
+                headers: { "X-CSRFToken": csrftoken },
+            }).fail(function (xhr, status, error) {
+                console.warn("KOSync progress report failed:", error);
+            });
+        }, 3000);
+    }
+
+    function kosyncFurtherThanLocal(kosyncPercentage, position_key) {
+        try {
+            var _savedPos = localStorage.getItem(position_key);
+            if (_savedPos) {
+                var _posObj = JSON.parse(_savedPos);
+                if (_posObj && typeof _posObj.percentage === "number") {
+                    return kosyncPercentage > _posObj.percentage + 0.005;
+                }
+            }
+        } catch (e) {}
+        return true;
+    }
 
     /**
      * @param {string} action - Add or remove bookmark

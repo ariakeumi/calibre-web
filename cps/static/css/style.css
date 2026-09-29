@@ -511,3 +511,8 @@ body > div.container-fluid  {
 .input-group .toggle-password {
   height: 40px;
 }
+
+/* keep attached buttons as tall as the 40px inputs of the group */
+.input-group .input-group-btn > .btn {
+  height: 40px;
+}
