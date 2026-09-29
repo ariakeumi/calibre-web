@@ -172,6 +172,61 @@ def upsert_progress(user_id, document, percentage, progress, device, device_id="
     return entry, True
 
 
+def match_book_by_metadata(metadata):
+    """Best-effort match of a reported document to a library book by title/authors.
+    Used when a device reports progress for a file whose bytes differ from the
+    library copy (e.g. watermarked re-downloads), so progress still lands on the
+    right book."""
+    from . import calibre_db, db
+    from sqlalchemy.sql.expression import or_
+    title = str(metadata.get('title') or '').strip()
+    authors = metadata.get('authors') or []
+    if isinstance(authors, str):
+        authors = [authors]
+    authors = [str(a).strip() for a in authors if str(a).strip()]
+    if not title and not authors:
+        return None
+    query = calibre_db.session.query(db.Books)
+    candidates = query.filter(db.Books.title.ilike('%' + title + '%')).all() if title \
+        else calibre_db.session.query(db.Books).all()
+    if len(candidates) == 1:
+        return candidates[0].id
+    if authors:
+        author_filter = or_(*[db.Books.authors.any(db.Authors.name.ilike('%' + a + '%'))
+                              for a in authors])
+        candidates = [b for b in candidates if True] and \
+            calibre_db.session.query(db.Books).filter(author_filter).all() \
+            if not candidates else [b for b in candidates if b.authors and
+                                    any(a.name.lower() in ' '.join(x.name for x in b.authors).lower()
+                                        for a in authors)]
+        if len(candidates) == 1:
+            return candidates[0].id
+    return None
+
+
+def ensure_document_mapping(document, book_id=None, metadata=None):
+    """Make sure the document hash is mapped to a book. Unknown hashes are matched
+    by the metadata the client reported (if any)."""
+    if ub.session.query(ub.KosyncDocument).filter(ub.KosyncDocument.document == document).first():
+        return True
+    if book_id is None and metadata:
+        try:
+            book_id = match_book_by_metadata(metadata)
+        except Exception as ex:
+            log.error_or_exception("KOSync metadata matching failed: %s", ex)
+    if book_id is None:
+        return False
+    ub.session.add(ub.KosyncDocument(document=document, book_id=book_id))
+    try:
+        ub.session.commit()
+        log.info("KOSync: document %s... mapped to book %s", document[:12], book_id)
+        return True
+    except Exception as ex:
+        ub.session.rollback()
+        log.error_or_exception("KOSync document mapping failed: %s", ex)
+        return False
+
+
 @kosync.route("/syncs/progress", methods=["PUT"])
 @csrf.exempt
 def put_progress():
