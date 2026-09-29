@@ -1609,23 +1609,6 @@ def regenerate_kosync_key():
 # ###################################Show single book ##################################################################
 
 
-@web.route("/ajax/kosyncprogress/<int:book_id>/<book_format>", methods=['POST'])
-@user_login_required
-def set_kosync_progress(book_id, book_format):
-    """Store the built-in web reader's position as KOSync progress (device 'Calibre-Web')."""
-    payload = request.get_json(silent=True) or {}
-    try:
-        percentage = float(payload.get("percentage") or 0.0)
-    except (TypeError, ValueError):
-        return "", 400
-    progress = str(payload.get("progress") or "")
-    from .kosync import record_reader_progress
-    entry = record_reader_progress(book_id, book_format, percentage, progress)
-    if entry is None:
-        return jsonify(error=True), 400
-    return jsonify(percentage=entry.percentage), 201
-
-
 @web.route("/read/<int:book_id>/<book_format>")
 @login_required_if_no_ano
 @viewer_required
@@ -1648,11 +1631,8 @@ def read_book(book_id, book_format):
                                                              ub.Bookmark.format == book_format.upper())).first()
     if book_format.lower() == "epub" or book_format.lower() == "kepub":
         log.debug("Start [k]epub reader for %d", book_id)
-        kosync_entry = get_kosync_progress(book_id)
         return render_title_template('read.html', bookid=book_id, title=book.title, bookmark=bookmark,
-                                     book_format=book_format,
-                                     kosync_percentage=(kosync_entry.percentage if kosync_entry else None),
-                                     kosync_device=(kosync_entry.device if kosync_entry else None))
+                                     book_format=book_format)
     elif book_format.lower() == "pdf":
         log.debug("Start pdf reader for %d", book_id)
         return render_title_template('readpdf.html', pdffile=book_id, title=book.title)

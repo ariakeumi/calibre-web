@@ -184,32 +184,30 @@ def match_book_by_metadata(metadata):
     """Best-effort match of a reported document to a library book by title/authors.
     Used when a device reports progress for a file whose bytes differ from the
     library copy (e.g. watermarked re-downloads), so progress still lands on the
-    right book."""
+    right book. Only a unique match is accepted."""
     from . import calibre_db, db
-    from sqlalchemy.sql.expression import or_
     title = str(metadata.get('title') or '').strip()
+    if not title:
+        return None
     authors = metadata.get('authors') or []
     if isinstance(authors, str):
         authors = [authors]
-    authors = [str(a).strip() for a in authors if str(a).strip()]
-    if not title and not authors:
+    authors = [str(a).strip().lower() for a in authors if str(a).strip()]
+
+    candidates = calibre_db.session.query(db.Books) \
+        .filter(db.Books.title.ilike('%' + title + '%')).all()
+    log.info("KOSync match: title=%r authors=%r candidates=%d", title, authors, len(candidates))
+    if not candidates:
         return None
-    query = calibre_db.session.query(db.Books)
-    candidates = query.filter(db.Books.title.ilike('%' + title + '%')).all() if title \
-        else calibre_db.session.query(db.Books).all()
-    if len(candidates) == 1:
-        return candidates[0].id
     if authors:
-        author_filter = or_(*[db.Books.authors.any(db.Authors.name.ilike('%' + a + '%'))
-                              for a in authors])
-        candidates = [b for b in candidates if True] and \
-            calibre_db.session.query(db.Books).filter(author_filter).all() \
-            if not candidates else [b for b in candidates if b.authors and
-                                    any(a.name.lower() in ' '.join(x.name for x in b.authors).lower()
-                                        for a in authors)]
-        if len(candidates) == 1:
-            return candidates[0].id
-    return None
+        filtered = []
+        for book in candidates:
+            lib_authors = ' '.join(a.name.lower() for a in book.authors)
+            if any(a in lib_authors or lib_authors in a for a in authors if a):
+                filtered.append(book)
+        if filtered:
+            candidates = filtered
+    return candidates[0].id if len(candidates) == 1 else None
 
 
 def ensure_document_mapping(document, book_id=None, metadata=None):
@@ -254,12 +252,56 @@ def put_progress():
     device = str(payload.get('device') or '')
     device_id = str(payload.get('device_id') or '')
 
+    # Readest/KOReader can attach book metadata to progress reports; use it to map
+    # unknown document hashes to library books (e.g. watermarked re-downloads)
+    metadata = payload.get('metadata')
+    if isinstance(metadata, dict):
+        try:
+            ensure_document_mapping(document, metadata=metadata)
+        except Exception as ex:
+            log.error_or_exception("KOSync metadata mapping failed: %s", ex)
+
     entry, _updated = upsert_progress(user.id, document, percentage, progress, device, device_id)
     if entry is None:
         return _json({"message": "Database error", "code": 2000}, 500)
     return _json({"document": entry.document,
                   "progress": entry.progress,
                   "percentage": entry.percentage}, 200)
+
+
+@kosync.route("/admin/map_document", methods=["POST"])
+@csrf.exempt
+def admin_map_document():
+    """Manually map a document hash to a library book (admin only)."""
+    from .cw_login import current_user
+    if not current_user or not current_user.is_authenticated or not current_user.role_admin():
+        return _json({"message": "forbidden"}, 403)
+    payload = _request_json()
+    document = str(payload.get('document') or '').strip().lower()
+    if len(document) != 32:
+        return _json({"message": "Invalid document"}, 400)
+    try:
+        book_id = int(payload.get('book_id'))
+    except (TypeError, ValueError):
+        return _json({"message": "Invalid book_id"}, 400)
+    ok = ensure_document_mapping(document, book_id=book_id)
+    return _json({"document": document, "book_id": book_id, "mapped": ok}, 200 if ok else 409)
+
+
+@kosync.route("/admin/delete_progress", methods=["POST"])
+@csrf.exempt
+def admin_delete_progress():
+    """Delete a bogus progress row (admin only)."""
+    from .cw_login import current_user
+    if not current_user or not current_user.is_authenticated or not current_user.role_admin():
+        return _json({"message": "forbidden"}, 403)
+    document = str(_request_json().get('document') or '').strip().lower()
+    if len(document) != 32:
+        return _json({"message": "Invalid document"}, 400)
+    deleted = ub.session.query(ub.KosyncProgress).filter(ub.KosyncProgress.document == document).delete()
+    ub.session.query(ub.KosyncDocument).filter(ub.KosyncDocument.document == document).delete()
+    ub.session_commit()
+    return _json({"deleted": deleted})
 
 
 @kosync.route("/admin/progress/<username>", methods=["GET"])
@@ -314,38 +356,6 @@ def map_book_documents(book, session=None):
             session.rollback()
             log.error_or_exception("KOSync document mapping failed: %s", ex)
     return added
-
-
-def record_reader_progress(book_id, book_format, percentage, progress, device="Calibre-Web"):
-    """Store progress made in the built-in web reader under the document hash of
-    the requested file format, so it is visible to KOReader/Readest and on the
-    book page. The hash is computed from the file itself (cheap sparse read)."""
-    from . import calibre_db, config
-    from .cw_login import current_user
-    import os
-    percentage = max(0.0, min(1.0, percentage))
-    book = calibre_db.get_book(book_id)
-    if not book:
-        return None
-    data = next((d for d in book.data if d.format.lower() == book_format.lower()), None)
-    if not data:
-        return None
-    file_path = os.path.join(config.get_book_path(), book.path,
-                             data.name + '.' + data.format.lower())
-    try:
-        document = partial_md5(file_path)
-    except (OSError, IOError) as ex:
-        log.warning("KOSync: cannot hash %s: %s", file_path, ex)
-        return None
-    if not ub.session.query(ub.KosyncDocument).filter(ub.KosyncDocument.document == document).first():
-        ub.session.add(ub.KosyncDocument(document=document, book_id=book.id))
-        try:
-            ub.session.commit()
-        except Exception as ex:
-            ub.session.rollback()
-            log.error_or_exception("KOSync document mapping failed: %s", ex)
-    entry, _updated = upsert_progress(int(current_user.id), document, percentage, progress, device)
-    return entry
 
 
 def get_book_progress(book_id, user_id):
