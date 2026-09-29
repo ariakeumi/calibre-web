@@ -121,13 +121,15 @@ def auth_user():
 
 
 @kosync.route("/syncs/progress", methods=["GET"])
+@kosync.route("/syncs/progress/<document>", methods=["GET"])
 @csrf.exempt
-def get_progress():
+def get_progress(document=None):
     user = _auth_user()
     if not user:
         return _json({"message": "Bad credentials", "code": 2001}, 401)
-    document = _document_hash()
-    if not document:
+    # Readest requests the progress by path segment, KOReader by body/query field
+    document = str(document or _document_hash() or '').strip().lower()
+    if len(document) != 32:
         return _json({"message": "Invalid document", "code": 2002}, 400)
     entry = (ub.session.query(ub.KosyncProgress)
              .filter(ub.KosyncProgress.user_id == user.id)
@@ -189,6 +191,30 @@ def put_progress():
     return _json({"document": entry.document,
                   "progress": entry.progress,
                   "percentage": entry.percentage}, 200)
+
+
+@kosync.route("/admin/progress/<username>", methods=["GET"])
+@csrf.exempt
+def admin_list_progress(username):
+    # diagnostics: list the stored sync progress of a user (admin only)
+    from .cw_login import current_user
+    if not current_user or not current_user.is_authenticated or not current_user.role_admin():
+        return _json({"message": "forbidden"}, 403)
+    user = ub.session.query(ub.User).filter(ub.User.name == username).first()
+    if not user:
+        return _json({"message": "user not found"}, 404)
+    rows = (ub.session.query(ub.KosyncProgress, ub.KosyncDocument.book_id)
+            .outerjoin(ub.KosyncDocument, ub.KosyncDocument.document == ub.KosyncProgress.document)
+            .filter(ub.KosyncProgress.user_id == user.id)
+            .all())
+    result = [{"document": p.document,
+               "percentage": p.percentage,
+               "progress": p.progress,
+               "device": p.device,
+               "time": p.timestamp.strftime("%Y-%m-%d %H:%M:%S") if p.timestamp else None,
+               "book_id": book_id}
+              for p, book_id in rows]
+    return _json({"user": username, "count": len(result), "progress": result})
 
 
 def map_book_documents(book, session=None):
