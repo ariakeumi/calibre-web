@@ -23,10 +23,9 @@ import json
 import mimetypes
 import chardet  # dependency of requests
 import copy
-from binascii import hexlify
 from importlib.metadata import metadata
 
-from flask import Blueprint, jsonify, request, redirect, send_from_directory, make_response, flash, abort, url_for
+from flask import Blueprint, jsonify, request, redirect, send_from_directory, make_response, flash, abort, url_for, after_this_request
 from flask import session as flask_session
 from flask_babel import gettext as _
 from flask_babel import get_locale
@@ -40,6 +39,7 @@ from werkzeug.datastructures import Headers
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import constants, logger, isoLanguages, services, limiter
+from .kosync import generate_kosync_key
 from . import db, ub, config, app
 from . import calibre_db, kobo_sync_status
 from .search import render_search_results, render_adv_search_results
@@ -1169,6 +1169,13 @@ def get_cover(book_id, resolution=None):
         'lg': constants.COVER_THUMBNAIL_LARGE,
     }
     cover_resolution = resolutions.get(resolution, None)
+
+    # covers carry a c=<last_modified> cache-busting parameter, so they can be
+    # cached aggressively; without this browsers revalidate every image on every visit
+    @after_this_request
+    def add_cover_cache_headers(response):
+        response.headers['Cache-Control'] = 'private, max-age=604800'
+        return response
     return get_book_cover(book_id, cover_resolution)
 
 
@@ -1183,6 +1190,11 @@ def get_series_cover(series_id, resolution=None):
         'lg': constants.COVER_THUMBNAIL_LARGE,
     }
     cover_resolution = resolutions.get(resolution, None)
+
+    @after_this_request
+    def add_series_cover_cache_headers(response):
+        response.headers['Cache-Control'] = 'private, max-age=604800'
+        return response
     return get_series_cover_thumbnail(series_id, cover_resolution)
 
 
@@ -1561,7 +1573,7 @@ def profile():
         change_profile(kobo_support, local_oauth_check, oauth_status, translations, languages)
     elif current_user.is_authenticated and not current_user.is_anonymous and not current_user.kosync_key:
         # generate the personal KOSync sync key on first visit to the profile
-        current_user.kosync_key = hexlify(os.urandom(18)).decode('utf-8')
+        current_user.kosync_key = generate_kosync_key()
         try:
             ub.session.commit()
         except Exception:
@@ -1584,7 +1596,7 @@ def profile():
 def regenerate_kosync_key():
     if current_user.is_anonymous:
         abort(403)
-    current_user.kosync_key = hexlify(os.urandom(18)).decode('utf-8')
+    current_user.kosync_key = generate_kosync_key()
     try:
         ub.session.commit()
         flash(_("New KOSync sync key generated, update it in your e-reader"), category="success")

@@ -37,6 +37,14 @@ def kosync_md5(value):
     return hashlib.md5(value.encode('utf-8')).hexdigest()  # nosec
 
 
+def generate_kosync_key():
+    """Personal sync key: 8 chars from an unambiguous lowercase alphabet
+    (no 0/O/1/l/I) so it can be typed on an e-reader without pain."""
+    import secrets
+    alphabet = 'abcdefghjkmnpqrstuvwxyz23456789'
+    return ''.join(secrets.choice(alphabet) for _ in range(8))
+
+
 def partial_md5(file_path):
     md5_hash = hashlib.md5()  # nosec
     with open(file_path, 'rb') as f:
